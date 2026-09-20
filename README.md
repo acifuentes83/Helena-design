@@ -14,3 +14,5 @@ El carrito funciona localmente. El checkout real requiere credenciales de un pro
 <!-- Pages deployment trigger: 2026-09-20 -->
 
 <!-- redeploy after github-pages environment policy update -->
+
+<!-- Pages enabled: redeploy -->
