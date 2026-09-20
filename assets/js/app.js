@@ -1,4 +1,4 @@
-import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm';
+import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let cart=JSON.parse(localStorage.getItem('helena-cart')||'[]');
 function renderCart(){$('#cartCount').textContent=cart.length;$('#cartItems').innerHTML=cart.length?cart.map((x,i)=>`<div class="cartItem"><b>${x}</b><button class="close" data-rm="${i}">×</button></div>`).join(''):'<p>Aún no agregas piezas.</p>';$$('[data-rm]').forEach(b=>b.onclick=()=>{cart.splice(+b.dataset.rm,1);save()})}
@@ -9,11 +9,11 @@ $$('.add').forEach(b=>b.onclick=()=>{cart.push(b.dataset.product);save();openCar
 let stream,landmarker,raf,lastVideoTime=-1,side=1,scale=1,currentBag='assets/images/bolso-carmesi.svg';
 const video=$('#video'),canvas=$('#overlay'),ctx=canvas.getContext('2d'),bagImg=new Image();
 bagImg.decoding='async';
-function setBag(src){currentBag=src||currentBag;bagImg.src=currentBag}
+function setBag(src){currentBag=src||currentBag;bagImg.src=new URL(currentBag,document.baseURI).href}
 setBag(currentBag);
 
 async function createPose(){
- const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+ const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm');
  const opts={baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minPosePresenceConfidence:.5,minTrackingConfidence:.5};
  try{return await PoseLandmarker.createFromOptions(vision,opts)}catch(e){opts.baseOptions.delegate='CPU';return await PoseLandmarker.createFromOptions(vision,opts)}
 }
