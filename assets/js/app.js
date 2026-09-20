@@ -1,56 +1,57 @@
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm';
-const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let cart=JSON.parse(localStorage.getItem('helena-cart')||'[]');
 function renderCart(){$('#cartCount').textContent=cart.length;$('#cartItems').innerHTML=cart.length?cart.map((x,i)=>`<div class="cartItem"><b>${x}</b><button class="close" data-rm="${i}">×</button></div>`).join(''):'<p>Aún no agregas piezas.</p>';$$('[data-rm]').forEach(b=>b.onclick=()=>{cart.splice(+b.dataset.rm,1);save()})}
 function save(){localStorage.setItem('helena-cart',JSON.stringify(cart));renderCart()} renderCart();
-$$('.add').forEach(b=>b.onclick=()=>{cart.push(b.dataset.product);save();openCart()});
 const openCart=()=>{$('#cart').classList.add('open');$('#shade').classList.add('open')},closeCart=()=>{$('#cart').classList.remove('open');$('#shade').classList.remove('open')};
-$('#openCart').onclick=openCart;$('#closeCart').onclick=closeCart;$('#shade').onclick=closeCart;
+$$('.add').forEach(b=>b.onclick=()=>{cart.push(b.dataset.product);save();openCart()});$('#openCart').onclick=openCart;$('#closeCart').onclick=closeCart;$('#shade').onclick=closeCart;
 
-let stream,landmarker,raf,side=1,scale=1,currentBag='carmesi',lastPose=null;
-const video=$('#video'),canvas=$('#overlay'),ctx=canvas.getContext('2d'),bag=$('#arBag'),msg=$('#arMsg');
-const bags={carmesi:'assets/images/bolso-carmesi.svg',lavanda:'assets/images/bolso-lavanda.svg'};
+let stream,landmarker,raf,lastVideoTime=-1,side=1,scale=1,currentBag='assets/images/bolso-carmesi.svg';
+const video=$('#video'),canvas=$('#overlay'),ctx=canvas.getContext('2d'),bagImg=new Image();
+bagImg.decoding='async';
+function setBag(src){currentBag=src||currentBag;bagImg.src=currentBag}
+setBag(currentBag);
 
+async function createPose(){
+ const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+ const opts={baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minPosePresenceConfidence:.5,minTrackingConfidence:.5};
+ try{return await PoseLandmarker.createFromOptions(vision,opts)}catch(e){opts.baseOptions.delegate='CPU';return await PoseLandmarker.createFromOptions(vision,opts)}
+}
 async function startAR(ev){
- currentBag=ev.currentTarget.dataset.bag||'carmesi'; bag.src=bags[currentBag]; scale=1;
- $('#arModal').classList.add('open'); msg.textContent='Solicitando acceso a la cámara…';
+ setBag(ev?.currentTarget?.dataset?.bag);
+ $('#arModal').classList.add('open');document.body.classList.add('ar-open');$('#arMsg').textContent='Solicitando permiso para la cámara…';
  try{
-   if(!navigator.mediaDevices?.getUserMedia) throw new Error('camera unavailable');
-   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:960}},audio:false});
-   video.srcObject=stream; await video.play();
-   msg.textContent='Cargando seguimiento corporal…';
-   const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
-   try{landmarker=await PoseLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.55,minTrackingConfidence:.55});}
-   catch(e){landmarker=await PoseLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},runningMode:'VIDEO',numPoses:1});}
-   msg.textContent='Aléjate un poco para mostrar hombros y cintura'; loop();
- }catch(e){console.error(e);msg.textContent='No se pudo abrir la cámara. Permite el acceso en el navegador.'}
+  if(!navigator.mediaDevices?.getUserMedia)throw new Error('camera unsupported');
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:960}},audio:false});
+  video.srcObject=stream;await video.play();$('#arMsg').textContent='Cargando detección corporal…';landmarker=await createPose();$('#arMsg').textContent='Aléjate un poco para mostrar hombros y cintura';loop();
+ }catch(e){console.error(e);$('#arMsg').textContent='No pudimos abrir la cámara. Permite Cámara para este sitio y vuelve a intentarlo.'}
 }
-function mapPoint(p){return{x:(1-p.x)*video.clientWidth,y:p.y*video.clientHeight}}
-function updateBag(p){
- const L=mapPoint(p[11]),R=mapPoint(p[12]),LH=mapPoint(p[23]),RH=mapPoint(p[24]);
- const shoulder=Math.hypot(L.x-R.x,L.y-R.y), torso=Math.hypot((L.x+R.x-LH.x-RH.x)/2,(L.y+R.y-LH.y-RH.y)/2);
- if(shoulder<45||torso<60)return;
- const anchor=side>0?R:L;
- const dir=side>0?1:-1;
- const w=Math.max(150,Math.min(video.clientWidth*.62,shoulder*1.62*scale));
- const h=w*1.02;
- const x=anchor.x+dir*shoulder*.42-w/2;
- const y=anchor.y+torso*.28;
- const angle=Math.atan2(R.y-L.y,R.x-L.x)*.32;
- bag.style.width=w+'px';bag.style.height=h+'px';bag.style.left=x+'px';bag.style.top=y+'px';
- bag.style.transform=`rotate(${angle}rad)`;
- bag.style.opacity='1'; msg.textContent='Muévete lentamente · el bolso sigue tu hombro';
+function drawBag(p){
+ const L=p[11],R=p[12],LH=p[23],RH=p[24]; if(!L||!R||!LH||!RH)return;
+ const W=canvas.width,H=canvas.height;
+ const shoulder=Math.hypot((L.x-R.x)*W,(L.y-R.y)*H);
+ const torso=Math.hypot((((L.x+R.x)-(LH.x+RH.x))/2)*W,(((L.y+R.y)-(LH.y+RH.y))/2)*H);
+ const anchor=side>0?L:R;
+ const x=anchor.x*W + side*shoulder*.40;
+ const y=anchor.y*H + torso*.60;
+ const w=Math.max(150,shoulder*1.28*scale);
+ const ratio=(bagImg.naturalHeight||1)/(bagImg.naturalWidth||1);
+ const h=w*Math.min(1.35,Math.max(.75,ratio));
+ const ang=Math.atan2((L.y-R.y)*H,(L.x-R.x)*W)*.38;
+ ctx.save();ctx.translate(x,y);ctx.rotate(ang);ctx.globalAlpha=.97;
+ ctx.shadowColor='rgba(0,0,0,.28)';ctx.shadowBlur=22;ctx.shadowOffsetY=12;
+ if(bagImg.complete&&bagImg.naturalWidth)ctx.drawImage(bagImg,-w/2,-h*.18,w,h);
+ ctx.restore();
 }
-async function loop(){
- if(!landmarker||video.readyState<2){raf=requestAnimationFrame(loop);return}
- canvas.width=video.clientWidth;canvas.height=video.clientHeight;ctx.clearRect(0,0,canvas.width,canvas.height);
- try{const res=landmarker.detectForVideo(video,performance.now()),p=res.landmarks?.[0];if(p){lastPose=p;updateBag(p)}else{bag.style.opacity='.15';msg.textContent='Muestra hombros y cintura frente a la cámara'}}catch(e){}
+function loop(){
+ if(!landmarker||!stream)return;
+ if(video.readyState>=2){
+  if(canvas.width!==video.videoWidth||canvas.height!==video.videoHeight){canvas.width=video.videoWidth;canvas.height=video.videoHeight}
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(video.currentTime!==lastVideoTime){lastVideoTime=video.currentTime;const r=landmarker.detectForVideo(video,performance.now()),p=r.landmarks?.[0];if(p){drawBag(p);$('#arMsg').textContent='Bolso posicionado · muévete para verlo en tiempo real'}else $('#arMsg').textContent='Muestra hombros y cintura completos a la cámara'}
+ }
  raf=requestAnimationFrame(loop);
 }
-function stopAR(){cancelAnimationFrame(raf);stream?.getTracks().forEach(t=>t.stop());stream=null;landmarker?.close?.();landmarker=null;bag.style.opacity='0';$('#arModal').classList.remove('open')}
-$$('[data-ar]').forEach(b=>b.onclick=startAR);
-$('#closeAr').onclick=stopAR;$('#stopBtn').onclick=stopAR;
-$('#sideBtn').onclick=()=>{side*=-1;if(lastPose)updateBag(lastPose)};
-$('#sizeDown').onclick=()=>{scale=Math.max(.65,scale-.1);if(lastPose)updateBag(lastPose)};
-$('#sizeUp').onclick=()=>{scale=Math.min(1.45,scale+.1);if(lastPose)updateBag(lastPose)};
+function stopAR(){cancelAnimationFrame(raf);raf=null;stream?.getTracks().forEach(t=>t.stop());stream=null;try{landmarker?.close()}catch{}landmarker=null;lastVideoTime=-1;ctx.clearRect(0,0,canvas.width,canvas.height);video.srcObject=null;$('#arModal').classList.remove('open');document.body.classList.remove('ar-open')}
+$$('[data-ar]').forEach(b=>b.addEventListener('click',startAR));$('#closeAr').onclick=stopAR;$('#stopBtn').onclick=stopAR;$('#sideBtn').onclick=()=>side*=-1;$('#sizeRange').oninput=e=>scale=+e.target.value/100;
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopAR()});
