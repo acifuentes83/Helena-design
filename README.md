@@ -10,3 +10,5 @@ La prueba virtual detecta hombros y torso en el navegador. El GLB incluido es ap
 
 ## Comercio
 El carrito funciona localmente. El checkout real requiere credenciales de un proveedor como Mercado Pago, Webpay, Shopify o Jumpseller.
+
+<!-- Pages deployment trigger: 2026-09-20 -->
